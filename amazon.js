@@ -43,9 +43,8 @@ var AMAZON_Cbl;
   const amazonCodePairUrl = amazonHostUrl + "/auth/O2/create/codepair";
   const amazonTokenUrl    = amazonHostUrl + "/auth/O2/token";
   const deviceSerialNumber = guid();
-  var clientID = "amzn1.application-oa2-client.62683445c51c4bd4abad507557aff43c"; // localStorage.getItem("client_id");
+  var clientID = "amzn1.application-oa2-client.1675c236e59546c2bea62ea5444d3510"; // localStorage.getItem("client_id");
   var productID = "Test"; // localStorage.getItem("product_id");
-  var clientSecret = "4fff882b76788a4185d0b706193ffeea4a1f088626102216aa6ac907d07ea674";
   var alexaVAAddress = localStorage.getItem("alexa_va_address");
   var alexaVAConnected = false;
   var alexaVAAddressInput;
@@ -149,7 +148,6 @@ var AMAZON_Cbl;
       "grant_type":"refresh_token",
       "refresh_token":refreshToken,
       "client_id":clientID,
-      "client_secret":clientSecret,
     };
 
     const tokenRefreshReq = new XMLHttpRequest();
