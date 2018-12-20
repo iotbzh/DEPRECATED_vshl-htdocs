@@ -12,8 +12,6 @@
  * express or implied. See the License for the specific language governing
  * permissions and limitations under the License.
  */
-AMAZON = function() {
-
 var afb;
 var alexaWs;
 
@@ -22,152 +20,148 @@ var base = {
   token: "HELLO",
 };
 
-// GUID generator for generating device serial number.
+const amazonHostUrl = "https://api.amazon.com";
+const amazonCodePairUrl = amazonHostUrl + "/auth/O2/create/codepair";
+const amazonTokenUrl    = amazonHostUrl + "/auth/O2/token";
+const deviceSerialNumber = guid();
+var clientID = "amzn1.application-oa2-client.1675c236e59546c2bea62ea5444d3510"; // localStorage.getItem("client_id");
+var productID = "Test"; // localStorage.getItem("product_id");
+
 function guid() {
-  function s4() {
-    return Math.floor((1 + Math.random()) * 0x10000)
-      .toString(16)
-      .substring(1);
-  }
-  return s4() + s4() + '-' + s4() + '-' + s4() + '-' + s4() + '-' + s4() + s4() + s4();
+    function s4() {
+      return Math.floor((1 + Math.random()) * 0x10000)
+          .toString(16)
+          .substring(1);
+      }
+    return s4() + s4() + '-' + s4() + '-' + s4() + '-' + s4() + '-' + s4() + s4() + s4();
 }
 
-/*********************************************/
-/****                                     ****/
-/****             AMAZON_cbl              ****/
-/****                                     ****/
-/*********************************************/
-var AMAZON_Cbl;
-{
-  const amazonHostUrl = "https://api.amazon.com";
-  const amazonCodePairUrl = amazonHostUrl + "/auth/O2/create/codepair";
-  const amazonTokenUrl    = amazonHostUrl + "/auth/O2/token";
-  const deviceSerialNumber = guid();
-  var clientID = "amzn1.application-oa2-client.1675c236e59546c2bea62ea5444d3510"; // localStorage.getItem("client_id");
-  var productID = "Test"; // localStorage.getItem("product_id");
-  var alexaVAAddress = localStorage.getItem("alexa_va_address");
-  var alexaVAConnected = false;
-  var alexaVAAddressInput;
-
-  AMAZON_Cbl = function() {
-    // Alexa VA Address
-    const alexaVAAddressInput = document.getElementById('alexa-va-address');
-    alexaVAAddress = alexaVAAddressInput.value;
-    connectToAlexaVA(alexaVAAddress);
-
-    alexaVAAddressInput.addEventListener("change",(evt) => {
-      var newAlexaVAAddress = alexaVAAddressInput.value;
-      if (alexaVAAddress != newAlexaVAAddress) {
-        connectToAlexaVA(newAlexaVAAddress);
-        localStorage.setItem("alexa_va_address", newAlexaVAAddress);
-      }
+function callVABinder(verb, query) {
+    // ws.call return a Promise
+    return alexaWs.call("alexa-voiceagent" + '/' + verb, query)
+        .then(function (res) {
+            return res;
+        })
+        .catch(function (err) {
+            throw err;
     });
-  }
+};
 
-  function connectToAlexaVA(address) {
-    base.host = address;
+var alexaVAAddress;
+function init() {
+    alexaVAAddress = localStorage.getItem("alexa_va_address");
+    document.getElementById("alexa-va-address").value = alexaVAAddress;
+    if (alexaVAAddress != null) {
+        connectToAlexaVA();
+    }
+}
+
+var alexaVAConnected;
+function connectToAlexaVA() {
+    base.host = alexaVAAddress;
     afb = new AFB(base, "HELLO");
 
     function onopen() {
-      console.log("Connected to Alexa VA");
-      alexaVAConnected = true;
+        document.getElementById("connected").innerHTML = "Connected";
+        document.getElementById("connected").style.background = "lightgreen";
+        alexaVAConnected = true;
+        // Attempt to refresh token.
+        refreshToken();
     }
 
     function onabort() {
-      console.log("Alexa VA connection aborted.");
-      alexaVAConnected = false;
+        document.getElementById("connected").innerHTML = "Connected Closed";
+        document.getElementById("connected").style.background = "red";
+        alexaVAConnected = false;
     }
 
     alexaWs = new afb.ws(onopen, onabort);
-  }
+}
 
-  function sendRequest(httpReq, paramsJson, url, responseCb) {
+var msgCount = 0;
+function updateStatusMessage(message) {
+    var currentdate = new Date(); 
+    var datetime = currentdate.getDate() + "/"
+        + (currentdate.getMonth()+1)  + "/" 
+        + currentdate.getFullYear() + " @ "  
+        + currentdate.getHours() + ":"  
+        + currentdate.getMinutes() + ":" 
+        + currentdate.getSeconds();
+    const authStatusDiv = document.getElementById('cbl-auth-status');
+    const authStatusMsg = document.createElement("p");
+
+    msgCount++;
+    authStatusMsg.innerHTML = msgCount + ") " + datetime + ": " + message;
+    authStatusDiv.appendChild(authStatusMsg);    
+}
+
+function sendRequest(httpReq, paramsJson, url, responseCb) {
     httpReq.onreadystatechange = responseCb;
     var paramsQueryString = Object.keys(paramsJson).map(key => key + '=' + paramsJson[key]).join('&');
     httpReq.open("POST", url, true);
     httpReq.setRequestHeader("Content-type", "application/x-www-form-urlencoded");
     httpReq.send(paramsQueryString);
-  }
+}
 
-  //**********************************************
-  // Generic function to call VA binder
-  //***********************************************
-  function callVABinder(voiceAgent, verb, query) {
-    console.log(voiceAgent.api, verb, query);
-
-    // ws.call return a Promise
-    return alexaWs.call(voiceAgent.api + '/' + verb, query)
-      .then(function (res) {
-        log.reply(res);
-        count++;
-        return res;
-      })
-      .catch(function (err) {
-        log.reply(err);
-        count++;
-        throw err;
-      });
-  };
-
-  function updateAccessToken(voiceAgent, tokenResponseJson) {
+var tokenRefreshFunc;
+function updateAccessToken(tokenResponseJson) {
     if (alexaVAAddress === undefined || alexaVAAddress === null) {
-      console.log("No Alexa VA. So not updating the access token.");
-      return;
+        console.log("No Alexa VA. So not updating the access token.");
+        return;
     }
 
     // store the access and refresh tokens.
     if (typeof(Storage) !== "undefined") {
-      localStorage.setItem("access_token", tokenResponseJson["access_token"]);
-      localStorage.setItem("refresh_token", tokenResponseJson["refresh_token"]);
+        localStorage.setItem("access_token", tokenResponseJson["access_token"]);
+        localStorage.setItem("refresh_token", tokenResponseJson["refresh_token"]);
     }
 
     // Set the auth token
     if (alexaVAConnected) {
-      // Set new token
-      const query = {"token": tokenResponseJson["access_token"]};
-      callVABinder(voiceAgent, 'setAuthToken', query);
+        // Set new token
+        const query = {"token": tokenResponseJson["access_token"]};
+        callVABinder('setAuthToken', query);
+        updateStatusMessage("Refreshed the access token of Alexa VA at " + alexaVAAddress);
     }
 
     // Refresh the token as soon as it expires.
-    setTimeout(refreshToken, tokenResponseJson["expires_in"] * 1000);
-  }
+    clearTimeout(tokenRefreshFunc);
+    tokenRefreshFunc = setTimeout(refreshToken, tokenResponseJson["expires_in"] * 1000);
+}
 
-  function refreshToken(voiceAgent) {
-    if (voiceAgent == "undefined") {
-      console.log("Error: VoiceAgent undefined");
-      return;
-    }
+function refreshToken() {
+    console.log("Attempting to refresh token for VA at: " + alexaVAAddress);
 
     var refreshToken = localStorage.getItem("refresh_token");
     if (refreshToken == null) {
-      console.log("Error: No refresh token");
-      return;
+        console.log("Error: No refresh token");
+        return;
     }
 
     var paramsJson = {
-      "grant_type":"refresh_token",
-      "refresh_token":refreshToken,
-      "client_id":clientID,
+        "grant_type":"refresh_token",
+        "refresh_token":refreshToken,
+        "client_id":clientID,
     };
 
     const tokenRefreshReq = new XMLHttpRequest();
     sendRequest(tokenRefreshReq, paramsJson, amazonTokenUrl, function() {
-      if (tokenRefreshReq.readyState == 4) {
-        if (tokenRefreshReq.status == 200) {
-          console.log("Got access token " + tokenRefreshReq.responseText);
-          var tokenResponseJson = JSON.parse(tokenRefreshReq.responseText);
-          updateAccessToken(voiceAgent, tokenResponseJson);
-        } else {
-          console.log("Failed to refresh access token: " + tokenRefreshReq.responseText);
+        if (tokenRefreshReq.readyState == 4) {
+            if (tokenRefreshReq.status == 200) {
+                console.log("Got access token " + tokenRefreshReq.responseText);
+                var tokenResponseJson = JSON.parse(tokenRefreshReq.responseText);
+                updateAccessToken(tokenResponseJson);
+            } else {
+                console.log("Failed to refresh access token: " + tokenRefreshReq.responseText);
+            }
         }
-      }
     });
-  }
+}
 
-  function displayUserCodeAndURI(authResponseJson) {
-    const modal = document.getElementById('login-with-amazon');
-    const cblStatusDiv = document.createElement("div");
-    const cblStatusMsg = document.createElement("p");
+function displayUserCodeAndURI(authResponseJson) {
+    const modal = document.getElementById('cbl-code-dialog');
+    const cblStatusDiv = document.getElementById('cbl-code-div');
+    const cblStatusMsg = document.getElementById('cbl-code-para');
     const blank = "_blank";
 
     var cblPage = authResponseJson["verification_uri"] + "?cbl-code=" + authResponseJson["user_code"]
@@ -178,118 +172,78 @@ var AMAZON_Cbl;
     cblStatusDiv.appendChild(cblStatusMsg);
     modal.appendChild(cblStatusDiv);
 
-    const closeBtn = document.createElement("button");
+    const closeBtn = document.getElementById('cbl-code-close');
     closeBtn.addEventListener('click', (evt) => {
-      modal.close();
+        modal.close();
     });
     closeBtn.style = "margin: 10px";
     closeBtn.innerHTML = "Close";
     modal.appendChild(closeBtn);
-  }
 
-  function hideLoginUI() {
-    const loginDiv = document.getElementById('login-area');
-    loginDiv.style.display = "none";
-  }
+    modal.showModal()
+}
 
-  function login(voiceAgent) {
-    if (voiceAgent == undefined) {
-      console.log("Error: VoiceAgent undefined");
-      return;
-    }
-
-    const modal = document.getElementById('login-with-amazon');
-    const submitBtn = document.getElementById('submit-btn');
-    const cancelBtn = document.getElementById('cancel-btn');
-    submitBtn.addEventListener('click', (evt) => {
-      console.log("Alexa Destination address set to: " + alexaVAAddress);
-      startLoginProcess(voiceAgent);
-    });
-
-    cancelBtn.addEventListener('click', (evt) => {
-      modal.close();
-    });
-
-    const alexaVAAddressInput = document.getElementById('alexa-va-address');
-    alexaVAAddressInput.value = alexaVAAddress;
-
-    modal.showModal();
-  }
-
-  function startLoginProcess(voiceAgent) {
+function login() {
+    alexaVAAddress = document.getElementById('alexa-va-address').value;
     if (alexaVAAddress == null) {
-      console.log("Required information missing to start login process.");
-      return;
+        console.log("Error: No Alexa VA address");
+        return;
     }
 
     var reqJson = {
-      "response_type": "device_code",
-      "client_id": clientID,
-      "scope":"alexa:all",
-      "scope_data": JSON.stringify({
-        "alexa:all": {
-          "productID":productID,
-          "productInstanceAttributes" : {
-            "deviceSerialNumber": deviceSerialNumber
-          }
-        }
-      })
+        "response_type": "device_code",
+        "client_id": clientID,
+        "scope":"alexa:all",
+        "scope_data": JSON.stringify({
+            "alexa:all": {
+                "productID":productID,
+                "productInstanceAttributes" : {
+                    "deviceSerialNumber": deviceSerialNumber
+                }
+            }
+        })
     };
 
     const authReq = new XMLHttpRequest();
     var tokenUrl = amazonTokenUrl;
     sendRequest(authReq, reqJson, amazonCodePairUrl, function() {
-      if (authReq.readyState == 4) {
-        if (authReq.status == 200) {
-          var authResponse = JSON.parse(authReq.responseText);
-          console.log("Got auth codepair " + authReq.responseText);
-          hideLoginUI();
-          displayUserCodeAndURI(authResponse);
-          var maxTokenReqCnt = authResponse["expires_in"] / authResponse["interval"];
-          var tokenReqFuncId = setTimeout(function tokenReqFunc() {
-            var reqJson = {
-              "grant_type":"device_code",
-              "device_code":authResponse["device_code"],
-              "user_code":authResponse["user_code"]
-            };
-            const tokenReq = new XMLHttpRequest();
-            sendRequest(tokenReq, reqJson, tokenUrl, function() {
-              if (tokenReq.readyState == 4) {
-                if (tokenReq.status == 200) {
-                  console.log("Got access token " + tokenReq.responseText);
-                  var tokenResponseJson = JSON.parse(tokenReq.responseText);
-                  updateAccessToken(voiceAgent, tokenResponseJson);
+        if (authReq.readyState == 4) {
+            if (authReq.status == 200) {
+                var authResponse = JSON.parse(authReq.responseText);
+                console.log("Got auth codepair " + authReq.responseText);
+                displayUserCodeAndURI(authResponse);
+                var maxTokenReqCnt = authResponse["expires_in"] / authResponse["interval"];
+                var tokenReqFuncId = setTimeout(function tokenReqFunc() {
+                    var reqJson = {
+                        "grant_type":"device_code",
+                        "device_code":authResponse["device_code"],
+                        "user_code":authResponse["user_code"]
+                    };
+                    const tokenReq = new XMLHttpRequest();
+                    sendRequest(tokenReq, reqJson, tokenUrl, function() {
+                        if (tokenReq.readyState == 4) {
+                            if (tokenReq.status == 200) {
+                                console.log("Got access token " + tokenReq.responseText);
+                                var tokenResponseJson = JSON.parse(tokenReq.responseText);
+                                // Update the localstorage only when we have the access token.
+                                localStorage.setItem("alexa_va_address", alexaVAAddress);
+                                updateAccessToken(tokenResponseJson);
+                            }
+                            else {
+                                maxTokenReqCnt--;
+                                console.log("Retrying... " + tokenReq.responseText);
+                                setTimeout(tokenReqFunc, authResponse["interval"] * 1000);
+                            }
+                        }
+                    });
+                }, authResponse["interval"] * 1000);
+                // Cancel if max token request attempts are reached.
+                if (maxTokenReqCnt == 0) {
+                    console.log("Reached max token request attemps limit.");
                 }
-                else {
-                  maxTokenReqCnt--;
-                  console.log("Retrying... " + tokenReq.responseText);
-                  setTimeout(tokenReqFunc, authResponse["interval"] * 1000);
-                }
-              }
-            });
-          }, authResponse["interval"] * 1000);
-          // Cancel if max token request attempts are reached.
-          if (maxTokenReqCnt == 0) {
-            console.log("Reached max token request attemps limit.");
-          }
-        } else {
-          console.log(authReq.status);
+            } else {
+                console.log(authReq.status);
+            }
         }
-      }
     });
-  }
-
-  AMAZON_Cbl.prototype = {
-    login: login,
-    refreshToken: refreshToken,
-  };
 }
-/*********************************************/
-/****                                     ****/
-/****                                     ****/
-/****                                     ****/
-/*********************************************/
-return {
-  cbl: AMAZON_Cbl
-};
-};
