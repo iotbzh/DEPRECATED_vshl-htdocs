@@ -24,8 +24,8 @@ const amazonHostUrl = "https://api.amazon.com";
 const amazonCodePairUrl = amazonHostUrl + "/auth/O2/create/codepair";
 const amazonTokenUrl    = amazonHostUrl + "/auth/O2/token";
 const deviceSerialNumber = guid();
-var clientID = "amzn1.application-oa2-client.1675c236e59546c2bea62ea5444d3510"; // localStorage.getItem("client_id");
-var productID = "Test"; // localStorage.getItem("product_id");
+var clientID = "amzn1.application-oa2-client.dd4128302d614e0eb40254dde29ed9f6"; // localStorage.getItem("client_id");
+var productID = "AGL"; // localStorage.getItem("product_id");
 
 function guid() {
     function s4() {
